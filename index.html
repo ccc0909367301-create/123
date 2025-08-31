@@ -8,145 +8,207 @@
       margin: 0;
       padding: 0;
       text-align: center;
-      background-color: black;
+      background-color: #111;
       color: white;
       font-family: sans-serif;
     }
-    #game {
-      position: relative;
-      display: inline-block;
-      margin-top: 15px;
-    }
-    .bg {
-      width: 800px;
-      height: 500px;
-      display: block;
-    }
-    .folder {
-      position: absolute;
-      width: 60px;
-      height: 60px;
-      cursor: pointer;
-      user-select: none;
+    canvas {
+      border: 2px solid white;
+      margin-top: 10px;
     }
     #message {
-      margin-top: 15px;
-      font-size: 24px;
+      margin-top: 10px;
+      font-size: 22px;
     }
-    #timer {
-      margin-top: 5px;
-      font-size: 20px;
-      color: #ff4444;
+    button {
+      margin-top: 15px;
+      padding: 8px 16px;
+      font-size: 18px;
+      cursor: pointer;
+      border-radius: 8px;
+      border: none;
+      background: #ffcc00;
     }
   </style>
 </head>
 <body>
   <h1>🔍 找到真正的資料夾！</h1>
-
-  <div id="game">
-    <canvas id="bg" class="bg"></canvas>
-  </div>
-  <div id="message">第 1 關</div>
-  <div id="timer">時間剩餘：15 秒</div>
+  <canvas id="gameCanvas" width="800" height="500"></canvas>
+  <div id="message">點擊開始遊戲</div>
+  <div id="timer"></div>
+  <button id="restartBtn" style="display:none;">重新挑戰</button>
 
   <script>
-    const canvas = document.getElementById("bg");
+    const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
     const message = document.getElementById("message");
     const timerDisplay = document.getElementById("timer");
-
-    canvas.width = 800;
-    canvas.height = 500;
+    const restartBtn = document.getElementById("restartBtn");
 
     let currentLevel = 0;
+    let timeLeft = 0;
     let timer = null;
-    let timeLeft = 15;
-    let folders = []; // 資料夾物件 {x,y,isReal}
+    let refreshInterval = null;
+    let folders = [];
+    let gameOver = false;
 
-    // 🎨 畫背景
     function drawBackground(level) {
-      const colors = ["#4444ff", "#44aa44", "#aa2222"];
+      const colors = ["#333366","#336633","#663333"];
       ctx.fillStyle = colors[level];
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
-    // 📂 畫資料夾
-    function drawFolder(x, y, isReal) {
+    function drawFolder(x,y,isReal) {
       ctx.fillStyle = "#ffcc00";
-      ctx.fillRect(x + 5, y + 20, 50, 35);
-      ctx.fillRect(x + 5, y + 5, 20, 20);
-      ctx.strokeStyle = "black";
-      ctx.strokeRect(x + 5, y + 20, 50, 35);
-      ctx.strokeRect(x + 5, y + 5, 20, 20);
-
-      folders.push({x, y, w: 60, h: 60, isReal});
+      ctx.fillRect(x,y,50,40);
+      ctx.fillStyle = "#cc9900";
+      ctx.fillRect(x,y-10,20,15);
+      folders.push({x,y,w:60,h:50,isReal,isFake:true,transformed:false});
     }
 
-    // ⏱️ 開始計時
-    function startTimer() {
-      timeLeft = 15;
-      timerDisplay.textContent = "時間剩餘：" + timeLeft + " 秒";
-      timer = setInterval(() => {
+    function drawFileIcon(x,y,type) {
+      ctx.fillStyle = "white";
+      ctx.fillRect(x,y,40,40);
+      ctx.fillStyle = "black";
+      ctx.font = "16px sans-serif";
+      ctx.fillText(type,x+5,y+25);
+    }
+
+    function drawWin() {
+      ctx.fillStyle = "#222";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "lime";
+      ctx.font = "40px sans-serif";
+      ctx.fillText("🎉 通關成功！",250,250);
+    }
+
+    function drawLose() {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = "red";
+      ctx.font = "40px sans-serif";
+      ctx.fillText("❌ 挑戰失敗！",250,250);
+    }
+
+    function startTimer(limit) {
+      timeLeft = limit;
+      timerDisplay.textContent = "剩餘時間: " + timeLeft + " 秒";
+      timer = setInterval(()=>{
         timeLeft--;
-        timerDisplay.textContent = "時間剩餘：" + timeLeft + " 秒";
+        timerDisplay.textContent = "剩餘時間: " + timeLeft + " 秒";
         if (timeLeft <= 0) {
-          clearInterval(timer);
-          message.textContent = "❌ 時間到，挑戰失敗！";
-          canvas.onclick = null;
+          endGame(false);
         }
-      }, 1000);
+      },1000);
     }
 
-    // 🚀 開始一關
-    function startLevel(level) {
+    function clearIntervals() {
       clearInterval(timer);
+      clearInterval(refreshInterval);
+    }
+
+    function startLevel(level) {
+      clearIntervals();
+      gameOver = false;
       folders = [];
+      ctx.clearRect(0,0,canvas.width,canvas.height);
       drawBackground(level);
-      message.textContent = "第 " + (level + 1) + " 關";
+      message.textContent = "第 " + (level+1) + " 關";
 
-      let folderCount = 1;
-      if (level === 1) folderCount = 5; // 第二關
-      if (level === 2) folderCount = 10; // 第三關
+      let folderCount;
+      let limit;
+      if (level===0) { folderCount=3; limit=10; }
+      if (level===1) { folderCount=8; limit=15; }
+      if (level===2) { folderCount=12; limit=30; }
 
-      // 隨機放資料夾
-      const realIndex = Math.floor(Math.random() * folderCount);
-      for (let i = 0; i < folderCount; i++) {
-        const x = Math.random() * (canvas.width - 60);
-        const y = Math.random() * (canvas.height - 60);
-        drawFolder(x, y, i === realIndex);
+      const realIndex = Math.floor(Math.random()*folderCount);
+      for (let i=0;i<folderCount;i++) {
+        const x = Math.random()*(canvas.width-60);
+        const y = Math.random()*(canvas.height-60);
+        drawFolder(x,y,i===realIndex);
       }
 
-      // 點擊判定
-      canvas.onclick = (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const clickX = e.clientX - rect.left;
-        const clickY = e.clientY - rect.top;
+      if (level===2) {
+        refreshInterval = setInterval(()=>{
+          if (gameOver) return;
+          ctx.clearRect(0,0,canvas.width,canvas.height);
+          drawBackground(level);
+          folders=[];
+          const newReal = Math.floor(Math.random()*folderCount);
+          for (let i=0;i<folderCount;i++) {
+            const x = Math.random()*(canvas.width-60);
+            const y = Math.random()*(canvas.height-60);
+            drawFolder(x,y,i===newReal);
+          }
+        },3000);
+      }
 
-        for (let f of folders) {
-          if (clickX >= f.x && clickX <= f.x + f.w &&
-              clickY >= f.y && clickY <= f.y + f.h) {
-            if (f.isReal) {
-              clearInterval(timer);
-              currentLevel++;
-              if (currentLevel < 3) {
-                startLevel(currentLevel);
-              } else {
-                message.textContent = "🎉 恭喜通關！";
-                canvas.onclick = null;
-                timerDisplay.textContent = "";
-              }
+      startTimer(limit);
+    }
+
+    function endGame(win) {
+      if (gameOver) return;
+      gameOver = true;
+      clearIntervals();
+      if (win) {
+        drawWin();
+        message.textContent = "🎉 你贏了！";
+      } else {
+        drawLose();
+        message.textContent = "❌ 時間到！";
+        restartBtn.style.display="inline-block";
+      }
+      canvas.onclick=null;
+    }
+
+    canvas.addEventListener("click",(e)=>{
+      if (gameOver) return;
+      const rect=canvas.getBoundingClientRect();
+      const clickX=e.clientX-rect.left;
+      const clickY=e.clientY-rect.top;
+
+      for (let f of folders) {
+        if (clickX>=f.x && clickX<=f.x+f.w && clickY>=f.y && clickY<=f.y+f.h) {
+          if (f.isReal) {
+            currentLevel++;
+            if (currentLevel<3) {
+              startLevel(currentLevel);
             } else {
-              message.textContent = "❌ 這是假的資料夾！";
+              endGame(true);
+            }
+            return;
+          } else {
+            if (!f.transformed) {
+              f.transformed=true;
+              const typeArr=["IMG","MP3","MP4"];
+              const t=typeArr[Math.floor(Math.random()*typeArr.length)];
+              ctx.clearRect(f.x,f.y,f.w,f.h);
+              drawFileIcon(f.x,f.y,t);
+              setTimeout(()=>{
+                if (!gameOver) {
+                  ctx.clearRect(f.x,f.y,f.w,f.h);
+                  drawFolder(f.x,f.y,false);
+                }
+              },3000);
+              message.textContent="❌ 假的資料夾！";
             }
           }
         }
-      };
+      }
+    });
 
-      startTimer();
+    restartBtn.addEventListener("click",()=>{
+      restartBtn.style.display="none";
+      currentLevel=0;
+      startLevel(currentLevel);
+    });
+
+    // 初始化
+    message.textContent="點擊畫布開始遊戲";
+    canvas.onclick=()=>{
+      currentLevel=0;
+      startLevel(currentLevel);
     }
-
-    // 🎮 遊戲開始
-    startLevel(currentLevel);
   </script>
 </body>
 </html>
