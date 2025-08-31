@@ -56,26 +56,33 @@
     // 統一資料夾尺寸
     const folderW = 50, folderH = 40;
 
+    // 畫資料夾圖示（長得一模一樣）
+    function drawFolder(x, y, fileType = null) {
+      // folder body
+      ctx.fillStyle = "#ffcc00";
+      ctx.fillRect(x, y, folderW, folderH);
+      // folder tab
+      ctx.fillStyle = "#cc9900";
+      ctx.fillRect(x, y - 10, 20, 15);
+      // 檔案圖示
+      if (fileType) {
+        drawFileIcon(x + 5, y + 10, fileType);
+      }
+    }
+
+    // 畫檔案icon（放在資料夾上）
+    function drawFileIcon(x, y, type) {
+      ctx.fillStyle = "white";
+      ctx.fillRect(x, y, 40, 20);
+      ctx.fillStyle = "black";
+      ctx.font = "13px sans-serif";
+      ctx.fillText(type, x + 6, y + 15);
+    }
+
     function drawBackground(level) {
       const colors = ["#333366","#336633","#663333"];
       ctx.fillStyle = colors[level];
       ctx.fillRect(0,0,canvas.width,canvas.height);
-    }
-
-    function drawFolder(x, y, isReal) {
-      ctx.fillStyle = "#ffcc00";
-      ctx.fillRect(x, y, folderW, folderH);
-      ctx.fillStyle = "#cc9900";
-      ctx.fillRect(x, y - 10, 20, 15);
-      folders.push({x, y, w: folderW, h: folderH, isReal, transformed: false});
-    }
-
-    function drawFileIcon(x, y, type) {
-      ctx.fillStyle = "white";
-      ctx.fillRect(x, y, 40, 40);
-      ctx.fillStyle = "black";
-      ctx.font = "16px sans-serif";
-      ctx.fillText(type, x + 5, y + 25);
     }
 
     function drawWin() {
@@ -129,20 +136,28 @@
       if (level === 1) { folderCount = 8; limit = 15; }
       if (level === 2) { folderCount = 12; limit = 30; }
 
+      // 只有檔案不同
+      // 假資料夾的檔案類型
+      const fakeTypeArr = ["IMG", "MP3", "MP4"];
+      // 真資料夾檔案
+      const realType = "FOLDER";
+
       function spawnFolders() {
         folders = [];
+        // 先決定真資料夾位置
+        const realIndex = Math.floor(Math.random() * folderCount);
         for (let i = 0; i < folderCount; i++) {
           const x = Math.random() * (canvas.width - folderW);
           const y = Math.random() * (canvas.height - folderH - 10) + 10;
-          drawFolder(x, y, false);
+          let fileType = i === realIndex ? realType : fakeTypeArr[Math.floor(Math.random() * fakeTypeArr.length)];
+          drawFolder(x, y, fileType);
+          folders.push({
+            x, y, w: folderW, h: folderH, 
+            isReal: i === realIndex, 
+            fileType,
+            transformed: false
+          });
         }
-        // random pick one to be real
-        const realIndex = Math.floor(Math.random() * folderCount);
-        folders[realIndex].isReal = true;
-        // redraw the real folder to make sure it's on top (optional)
-        let f = folders[realIndex];
-        ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
-        drawFolder(f.x, f.y, true);
       }
 
       spawnFolders();
@@ -197,16 +212,15 @@
           } else {
             if (!f.transformed) {
               f.transformed = true;
-              const typeArr = ["IMG", "MP3", "MP4"];
-              const t = typeArr[Math.floor(Math.random() * typeArr.length)];
               ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
-              drawFileIcon(f.x, f.y, t);
+              // 點錯假資料夾，閃現檔案 icon，再變回資料夾
+              drawFolder(f.x, f.y, f.fileType); // 仍畫同樣外觀和檔案
               setTimeout(() => {
                 if (!gameOver) {
                   ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
-                  drawFolder(f.x, f.y, false);
+                  drawFolder(f.x, f.y, f.fileType);
                 }
-              }, 3000);
+              }, 1000);
               message.textContent = "❌ 假的資料夾！";
             }
           }
