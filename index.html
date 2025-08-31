@@ -51,6 +51,10 @@
     let refreshInterval = null;
     let folders = [];
     let gameOver = false;
+    let gameStarted = false;
+
+    // 統一資料夾尺寸
+    const folderW = 50, folderH = 40;
 
     function drawBackground(level) {
       const colors = ["#333366","#336633","#663333"];
@@ -58,89 +62,98 @@
       ctx.fillRect(0,0,canvas.width,canvas.height);
     }
 
-    function drawFolder(x,y,isReal) {
+    function drawFolder(x, y, isReal) {
       ctx.fillStyle = "#ffcc00";
-      ctx.fillRect(x,y,50,40);
+      ctx.fillRect(x, y, folderW, folderH);
       ctx.fillStyle = "#cc9900";
-      ctx.fillRect(x,y-10,20,15);
-      folders.push({x,y,w:60,h:50,isReal,isFake:true,transformed:false});
+      ctx.fillRect(x, y - 10, 20, 15);
+      folders.push({x, y, w: folderW, h: folderH, isReal, transformed: false});
     }
 
-    function drawFileIcon(x,y,type) {
+    function drawFileIcon(x, y, type) {
       ctx.fillStyle = "white";
-      ctx.fillRect(x,y,40,40);
+      ctx.fillRect(x, y, 40, 40);
       ctx.fillStyle = "black";
       ctx.font = "16px sans-serif";
-      ctx.fillText(type,x+5,y+25);
+      ctx.fillText(type, x + 5, y + 25);
     }
 
     function drawWin() {
       ctx.fillStyle = "#222";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "lime";
       ctx.font = "40px sans-serif";
-      ctx.fillText("🎉 通關成功！",250,250);
+      ctx.fillText("🎉 通關成功！", 250, 250);
     }
 
     function drawLose() {
       ctx.fillStyle = "#000";
-      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.fillStyle = "red";
       ctx.font = "40px sans-serif";
-      ctx.fillText("❌ 挑戰失敗！",250,250);
+      ctx.fillText("❌ 挑戰失敗！", 250, 250);
     }
 
     function startTimer(limit) {
       timeLeft = limit;
       timerDisplay.textContent = "剩餘時間: " + timeLeft + " 秒";
-      timer = setInterval(()=>{
+      timer = setInterval(() => {
         timeLeft--;
         timerDisplay.textContent = "剩餘時間: " + timeLeft + " 秒";
         if (timeLeft <= 0) {
           endGame(false);
         }
-      },1000);
+      }, 1000);
     }
 
     function clearIntervals() {
       clearInterval(timer);
       clearInterval(refreshInterval);
+      timer = null;
+      refreshInterval = null;
     }
 
     function startLevel(level) {
       clearIntervals();
       gameOver = false;
       folders = [];
-      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBackground(level);
-      message.textContent = "第 " + (level+1) + " 關";
+
+      message.textContent = "第 " + (level + 1) + " 關";
+      timerDisplay.textContent = "";
 
       let folderCount;
       let limit;
-      if (level===0) { folderCount=3; limit=10; }
-      if (level===1) { folderCount=8; limit=15; }
-      if (level===2) { folderCount=12; limit=30; }
+      if (level === 0) { folderCount = 3; limit = 10; }
+      if (level === 1) { folderCount = 8; limit = 15; }
+      if (level === 2) { folderCount = 12; limit = 30; }
 
-      const realIndex = Math.floor(Math.random()*folderCount);
-      for (let i=0;i<folderCount;i++) {
-        const x = Math.random()*(canvas.width-60);
-        const y = Math.random()*(canvas.height-60);
-        drawFolder(x,y,i===realIndex);
+      function spawnFolders() {
+        folders = [];
+        for (let i = 0; i < folderCount; i++) {
+          const x = Math.random() * (canvas.width - folderW);
+          const y = Math.random() * (canvas.height - folderH - 10) + 10;
+          drawFolder(x, y, false);
+        }
+        // random pick one to be real
+        const realIndex = Math.floor(Math.random() * folderCount);
+        folders[realIndex].isReal = true;
+        // redraw the real folder to make sure it's on top (optional)
+        let f = folders[realIndex];
+        ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
+        drawFolder(f.x, f.y, true);
       }
 
-      if (level===2) {
-        refreshInterval = setInterval(()=>{
+      spawnFolders();
+
+      if (level === 2) {
+        refreshInterval = setInterval(() => {
           if (gameOver) return;
-          ctx.clearRect(0,0,canvas.width,canvas.height);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
           drawBackground(level);
-          folders=[];
-          const newReal = Math.floor(Math.random()*folderCount);
-          for (let i=0;i<folderCount;i++) {
-            const x = Math.random()*(canvas.width-60);
-            const y = Math.random()*(canvas.height-60);
-            drawFolder(x,y,i===newReal);
-          }
-        },3000);
+          spawnFolders();
+        }, 3000);
       }
 
       startTimer(limit);
@@ -150,28 +163,32 @@
       if (gameOver) return;
       gameOver = true;
       clearIntervals();
+      timerDisplay.textContent = "";
       if (win) {
         drawWin();
         message.textContent = "🎉 你贏了！";
       } else {
         drawLose();
         message.textContent = "❌ 時間到！";
-        restartBtn.style.display="inline-block";
       }
-      canvas.onclick=null;
+      restartBtn.style.display = "inline-block";
     }
 
-    canvas.addEventListener("click",(e)=>{
-      if (gameOver) return;
-      const rect=canvas.getBoundingClientRect();
-      const clickX=e.clientX-rect.left;
-      const clickY=e.clientY-rect.top;
+    // 統一點擊事件
+    function handleCanvasClick(e) {
+      if (!gameStarted || gameOver) return;
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
 
       for (let f of folders) {
-        if (clickX>=f.x && clickX<=f.x+f.w && clickY>=f.y && clickY<=f.y+f.h) {
+        if (
+          clickX >= f.x && clickX <= f.x + f.w &&
+          clickY >= f.y - 10 && clickY <= f.y + f.h
+        ) {
           if (f.isReal) {
             currentLevel++;
-            if (currentLevel<3) {
+            if (currentLevel < 3) {
               startLevel(currentLevel);
             } else {
               endGame(true);
@@ -179,36 +196,54 @@
             return;
           } else {
             if (!f.transformed) {
-              f.transformed=true;
-              const typeArr=["IMG","MP3","MP4"];
-              const t=typeArr[Math.floor(Math.random()*typeArr.length)];
-              ctx.clearRect(f.x,f.y,f.w,f.h);
-              drawFileIcon(f.x,f.y,t);
-              setTimeout(()=>{
+              f.transformed = true;
+              const typeArr = ["IMG", "MP3", "MP4"];
+              const t = typeArr[Math.floor(Math.random() * typeArr.length)];
+              ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
+              drawFileIcon(f.x, f.y, t);
+              setTimeout(() => {
                 if (!gameOver) {
-                  ctx.clearRect(f.x,f.y,f.w,f.h);
-                  drawFolder(f.x,f.y,false);
+                  ctx.clearRect(f.x, f.y - 10, f.w, f.h + 15);
+                  drawFolder(f.x, f.y, false);
                 }
-              },3000);
-              message.textContent="❌ 假的資料夾！";
+              }, 3000);
+              message.textContent = "❌ 假的資料夾！";
             }
           }
         }
       }
-    });
-
-    restartBtn.addEventListener("click",()=>{
-      restartBtn.style.display="none";
-      currentLevel=0;
-      startLevel(currentLevel);
-    });
+    }
 
     // 初始化
-    message.textContent="點擊畫布開始遊戲";
-    canvas.onclick=()=>{
-      currentLevel=0;
-      startLevel(currentLevel);
+    function resetGameDisplay() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground(0);
+      message.textContent = "點擊畫布開始遊戲";
+      timerDisplay.textContent = "";
+      restartBtn.style.display = "none";
+      gameStarted = false;
+      gameOver = false;
+      currentLevel = 0;
+      folders = [];
     }
+
+    canvas.addEventListener("click", function initialClick() {
+      if (gameStarted) return;
+      gameStarted = true;
+      currentLevel = 0;
+      startLevel(currentLevel);
+    });
+
+    canvas.addEventListener("click", handleCanvasClick);
+
+    restartBtn.addEventListener("click", () => {
+      resetGameDisplay();
+      gameStarted = true;
+      startLevel(0);
+    });
+
+    // 頁面載入時重設
+    resetGameDisplay();
   </script>
 </body>
 </html>
